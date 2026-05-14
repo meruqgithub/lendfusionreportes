@@ -68,15 +68,6 @@ export default function DashboardPage() {
       icono: <BiXCircle  size={32} className="text-purple" />,
       color: 'danger',
       ruta: '/dashboard/reportes-cancelacion'
-    },
-    /*
-    {
-      id: 6,
-      titulo: 'Reportes Personalizados',
-      descripcion: 'Crea tus propios reportes a medida',
-      icono: <BiBarChartAlt2 size={32} className="text-danger" />,
-      color: 'danger',
-      ruta: '/dashboard/reportes-personalizados'
     }
   ]
 
