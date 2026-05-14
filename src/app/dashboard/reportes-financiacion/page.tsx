@@ -16,20 +16,19 @@ import 'jspdf-autotable'
 import html2canvas from 'html2canvas'
 
 interface LoanData {
-  loan_id: number;
-  loan_number: string;
+  loan_id: number;                      // Agregado (viene de la consulta)
+  fecha_emision: string;
+  numero_prestamo: string;
   nombre_cliente: string;
-  monto_financiado: number;
-  tasa_interes: number;
-  interes_total: number;
-  monto_total: number;
-  total_cuotas: number;
-  cuotas_pendientes: number;
-  cuotas_pagadas: number;
-  analista_asignada: string;
-  fecha_creacion: string;
-  fecha_desembolso: string;
-  moneda: string;
+  nombre_analista: string | null;
+  capital_sin_interes: number;
+  porcentaje_interes: number;
+  total_interes: number;
+  total_capital_mas_interes: number;
+  numero_cuotas: number;
+  capital_cuota_mes: number;
+  interes_cuota_mes: number;
+  total_cuota_mes: number;
 }
 
 export default function ReportesFinanciacionPage() {
@@ -77,9 +76,14 @@ export default function ReportesFinanciacionPage() {
         throw new Error(result.error || 'Error al cargar datos')
       }
       
-      setLoanData(result.data)
-      setFilteredData(result.data)
-      calculateTotals(result.data)
+      // Ordenar de más reciente a más antigua por fecha_emision
+      const sortedData = result.data.sort((a: LoanData, b: LoanData) => 
+        new Date(b.fecha_emision).getTime() - new Date(a.fecha_emision).getTime()
+      )
+      
+      setLoanData(sortedData)
+      setFilteredData(sortedData)
+      calculateTotals(sortedData)
     } catch (error: any) {
       console.error('Error al cargar datos:', error)
       setError(error.message || 'Error al conectar con el servidor')
@@ -94,7 +98,7 @@ export default function ReportesFinanciacionPage() {
     // Filtrar por número de préstamo
     if (loanNumberFilter) {
       filtered = filtered.filter(loan => 
-        loan.loan_number.toLowerCase().includes(loanNumberFilter.toLowerCase())
+        loan.numero_prestamo.toLowerCase().includes(loanNumberFilter.toLowerCase())
       )
     }
 
@@ -109,20 +113,21 @@ export default function ReportesFinanciacionPage() {
     if (analystFilter) {
       if (analystFilter === 'vacios') {
         filtered = filtered.filter(loan => 
-          !loan.analista_asignada || loan.analista_asignada.trim() === ''
+          !loan.nombre_analista || loan.nombre_analista.trim() === ''
         )
       } else {
         filtered = filtered.filter(loan => 
-          loan.analista_asignada.toLowerCase().includes(analystFilter.toLowerCase())
+          loan.nombre_analista?.toLowerCase().includes(analystFilter.toLowerCase())
         )
       }
     }
 
-    // Filtrar por fecha de creación
+    // Filtrar por fecha de emisión
     if (dateFromFilter) {
       const fromDate = new Date(dateFromFilter)
+      fromDate.setHours(0, 0, 0, 0)
       filtered = filtered.filter(loan => {
-        const loanDate = new Date(loan.fecha_creacion)
+        const loanDate = new Date(loan.fecha_emision)
         return loanDate >= fromDate
       })
     }
@@ -131,10 +136,15 @@ export default function ReportesFinanciacionPage() {
       const toDate = new Date(dateToFilter)
       toDate.setHours(23, 59, 59, 999) // Incluir todo el día
       filtered = filtered.filter(loan => {
-        const loanDate = new Date(loan.fecha_creacion)
+        const loanDate = new Date(loan.fecha_emision)
         return loanDate <= toDate
       })
     }
+
+    // Ordenar nuevamente después de filtrar (por si acaso)
+    filtered.sort((a, b) => 
+      new Date(b.fecha_emision).getTime() - new Date(a.fecha_emision).getTime()
+    )
 
     setFilteredData(filtered)
     calculateTotals(filtered)
@@ -142,9 +152,9 @@ export default function ReportesFinanciacionPage() {
 
   const calculateTotals = (data: LoanData[]) => {
     const totals = data.reduce((acc, loan) => ({
-      montoFinanciado: acc.montoFinanciado + loan.monto_financiado,
-      interesTotal: acc.interesTotal + loan.interes_total,
-      montoTotal: acc.montoTotal + loan.monto_total
+      montoFinanciado: acc.montoFinanciado + loan.capital_sin_interes,
+      interesTotal: acc.interesTotal + loan.total_interes,
+      montoTotal: acc.montoTotal + loan.total_capital_mas_interes
     }), { montoFinanciado: 0, interesTotal: 0, montoTotal: 0 })
 
     setTotales(totals)
@@ -174,40 +184,38 @@ export default function ReportesFinanciacionPage() {
     }
   }
 
-  // Exportar a CSV (ya existente)
+  // Exportar a CSV
   const exportToCSV = () => {
     const headers = [
       'ID',
       'Número Préstamo',
       'Cliente',
       'Monto Financiado',
-      'Tasa',
+      'Tasa %',
       'Interés Total',
       'Monto Total',
       'Cuotas',
-      'Pendientes',
-      'Pagadas',
       'Analista',
-      'Fecha Creación',
-      'Fecha Desembolso',
-      'Moneda'
+      'Fecha Emisión',
+      'Capital Cuota Mes',
+      'Interés Cuota Mes',
+      'Total Cuota'
     ]
 
     const csvData = filteredData.map(loan => [
       loan.loan_id,
-      loan.loan_number,
+      loan.numero_prestamo,
       `"${loan.nombre_cliente}"`,
-      loan.monto_financiado,
-      loan.tasa_interes,
-      loan.interes_total,
-      loan.monto_total,
-      loan.total_cuotas,
-      loan.cuotas_pendientes,
-      loan.cuotas_pagadas,
-      loan.analista_asignada,
-      loan.fecha_creacion,
-      loan.fecha_desembolso,
-      loan.moneda
+      loan.capital_sin_interes,
+      loan.porcentaje_interes,
+      loan.total_interes,
+      loan.total_capital_mas_interes,
+      loan.numero_cuotas,
+      loan.nombre_analista || '',
+      loan.fecha_emision,
+      loan.capital_cuota_mes,
+      loan.interes_cuota_mes,
+      loan.total_cuota_mes
     ])
 
     const csvContent = [
@@ -230,19 +238,18 @@ export default function ReportesFinanciacionPage() {
     // Preparar los datos para Excel
     const excelData = filteredData.map(loan => ({
       'ID': loan.loan_id,
-      'Número Préstamo': loan.loan_number,
+      'Número Préstamo': loan.numero_prestamo,
       'Cliente': loan.nombre_cliente,
-      'Monto Financiado': loan.monto_financiado,
-      'Tasa': `${loan.tasa_interes}%`,
-      'Interés Total': loan.interes_total,
-      'Monto Total': loan.monto_total,
-      'Cuotas': loan.total_cuotas,
-      'Pendientes': loan.cuotas_pendientes,
-      'Pagadas': loan.cuotas_pagadas,
-      'Analista': loan.analista_asignada || 'Sin asignar',
-      'Fecha Creación': formatDate(loan.fecha_creacion),
-      'Fecha Desembolso': formatDate(loan.fecha_desembolso),
-      'Moneda': loan.moneda
+      'Monto Financiado': loan.capital_sin_interes,
+      'Tasa %': loan.porcentaje_interes,
+      'Interés Total': loan.total_interes,
+      'Monto Total': loan.total_capital_mas_interes,
+      'Cuotas': loan.numero_cuotas,
+      'Analista': loan.nombre_analista || 'Sin asignar',
+      'Fecha Emisión': formatDate(loan.fecha_emision),
+      'Capital Cuota Mes': loan.capital_cuota_mes,
+      'Interés Cuota Mes': loan.interes_cuota_mes,
+      'Total Cuota': loan.total_cuota_mes
     }))
 
     // Agregar fila de totales
@@ -251,16 +258,15 @@ export default function ReportesFinanciacionPage() {
       'Número Préstamo': '',
       'Cliente': '',
       'Monto Financiado': totales.montoFinanciado,
-      'Tasa': '',
+      'Tasa %': '',
       'Interés Total': totales.interesTotal,
       'Monto Total': totales.montoTotal,
       'Cuotas': '',
-      'Pendientes': '',
-      'Pagadas': '',
       'Analista': '',
-      'Fecha Creación': '',
-      'Fecha Desembolso': '',
-      'Moneda': ''
+      'Fecha Emisión': '',
+      'Capital 1ª Cuota': '',
+      'Interés 1ª Cuota': '',
+      'Total 1ª Cuota': ''
     }
 
     const dataWithTotals = [...excelData, totalesRow]
@@ -272,19 +278,18 @@ export default function ReportesFinanciacionPage() {
     // Establecer anchos de columnas
     const colWidths = [
       { wch: 5 },   // ID
-      { wch: 15 },  // Número Préstamo
+      { wch: 18 },  // Número Préstamo
       { wch: 40 },  // Cliente
       { wch: 15 },  // Monto Financiado
-      { wch: 8 },   // Tasa
+      { wch: 8 },   // Tasa %
       { wch: 15 },  // Interés Total
       { wch: 15 },  // Monto Total
       { wch: 8 },   // Cuotas
-      { wch: 10 },  // Pendientes
-      { wch: 10 },  // Pagadas
       { wch: 20 },  // Analista
-      { wch: 20 },  // Fecha Creación
-      { wch: 20 },  // Fecha Desembolso
-      { wch: 10 }   // Moneda
+      { wch: 20 },  // Fecha Emisión
+      { wch: 15 },  // Capital 1ª Cuota
+      { wch: 15 },  // Interés 1ª Cuota
+      { wch: 15 }   // Total 1ª Cuota
     ]
     worksheet['!cols'] = colWidths
 
@@ -323,7 +328,7 @@ export default function ReportesFinanciacionPage() {
         filters.push(`Analista: ${analystFilter}`)
       }
       if (dateFromFilter || dateToFilter) {
-        filters.push(`Fecha: ${dateFromFilter || 'Inicio'} a ${dateToFilter || 'Fin'}`)
+        filters.push(`Fecha emisión: ${dateFromFilter || 'Inicio'} a ${dateToFilter || 'Fin'}`)
       }
       
       if (filters.length > 0) {
@@ -340,25 +345,36 @@ export default function ReportesFinanciacionPage() {
       yPos += 10
       
       // Preparar datos para la tabla
-      const headers = [
-        ['ID', 'Número Préstamo', 'Cliente', 'Monto Financiado', 'Tasa', 'Interés Total', 'Monto Total', 'Cuotas', 'Pendientes', 'Pagadas', 'Analista', 'Fecha Creación', 'Fecha Desembolso', 'Moneda']
-      ]
+      const headers = [[
+        'ID', 
+        'Número Préstamo', 
+        'Cliente', 
+        'Monto Financiado', 
+        'Tasa %', 
+        'Interés Total', 
+        'Monto Total', 
+        'Cuotas', 
+        'Analista', 
+        'Fecha Emisión',
+        'Capital 1ª Cuota',
+        'Interés 1ª Cuota',
+        'Total 1ª Cuota'
+      ]]
       
       const data = filteredData.map(loan => [
         loan.loan_id.toString(),
-        loan.loan_number,
+        loan.numero_prestamo,
         loan.nombre_cliente,
-        `$${formatCurrency(loan.monto_financiado)}`,
-        `${loan.tasa_interes}%`,
-        `$${formatCurrency(loan.interes_total)}`,
-        `$${formatCurrency(loan.monto_total)}`,
-        loan.total_cuotas.toString(),
-        loan.cuotas_pendientes.toString(),
-        loan.cuotas_pagadas.toString(),
-        loan.analista_asignada || 'Sin asignar',
-        formatDate(loan.fecha_creacion),
-        formatDate(loan.fecha_desembolso),
-        loan.moneda
+        `$${formatCurrency(loan.capital_sin_interes)}`,
+        `${loan.porcentaje_interes}%`,
+        `$${formatCurrency(loan.total_interes)}`,
+        `$${formatCurrency(loan.total_capital_mas_interes)}`,
+        loan.numero_cuotas.toString(),
+        loan.nombre_analista || 'Sin asignar',
+        formatDate(loan.fecha_emision),
+        `$${formatCurrency(loan.capital_cuota_mes)}`,
+        `$${formatCurrency(loan.interes_cuota_mes)}`,
+        `$${formatCurrency(loan.total_cuota_mes)}`
       ])
       
       // Agregar fila de totales
@@ -370,7 +386,6 @@ export default function ReportesFinanciacionPage() {
         '',
         `$${formatCurrency(totales.interesTotal)}`,
         `$${formatCurrency(totales.montoTotal)}`,
-        '',
         '',
         '',
         '',
@@ -408,16 +423,15 @@ export default function ReportesFinanciacionPage() {
           1: { cellWidth: 25 },  // Número Préstamo
           2: { cellWidth: 40 },  // Cliente
           3: { cellWidth: 25 },  // Monto Financiado
-          4: { cellWidth: 15 },  // Tasa
+          4: { cellWidth: 15 },  // Tasa %
           5: { cellWidth: 25 },  // Interés Total
           6: { cellWidth: 25 },  // Monto Total
           7: { cellWidth: 15 },  // Cuotas
-          8: { cellWidth: 20 },  // Pendientes
-          9: { cellWidth: 20 },  // Pagadas
-          10: { cellWidth: 25 }, // Analista
-          11: { cellWidth: 30 }, // Fecha Creación
-          12: { cellWidth: 30 }, // Fecha Desembolso
-          13: { cellWidth: 15 }  // Moneda
+          8: { cellWidth: 25 },  // Analista
+          9: { cellWidth: 30 },  // Fecha Emisión
+          10: { cellWidth: 25 }, // Capital 1ª Cuota
+          11: { cellWidth: 25 }, // Interés 1ª Cuota
+          12: { cellWidth: 25 }  // Total 1ª Cuota
         }
       })
       
@@ -459,7 +473,9 @@ export default function ReportesFinanciacionPage() {
 
   // Obtener lista única de analistas
   const uniqueAnalysts = useMemo(() => {
-    const analysts = new Set(loanData.map(loan => loan.analista_asignada).filter(a => a && a.trim() !== ''))
+    const analysts = new Set(
+      loanData.map(loan => loan.nombre_analista).filter(a => a && a.trim() !== '')
+    )
     return Array.from(analysts).sort()
   }, [loanData])
 
@@ -621,7 +637,7 @@ export default function ReportesFinanciacionPage() {
                   
                   <Col md={3}>
                     <Form.Group className="mb-3">
-                      <Form.Label>Fecha Creación Desde</Form.Label>
+                      <Form.Label>Fecha Emisión Desde</Form.Label>
                       <Form.Control
                         type="date"
                         value={dateFromFilter}
@@ -634,7 +650,7 @@ export default function ReportesFinanciacionPage() {
                 <Row>
                   <Col md={3}>
                     <Form.Group className="mb-3">
-                      <Form.Label>Fecha Creación Hasta</Form.Label>
+                      <Form.Label>Fecha Emisión Hasta</Form.Label>
                       <Form.Control
                         type="date"
                         value={dateToFilter}
@@ -736,22 +752,21 @@ export default function ReportesFinanciacionPage() {
                           <th>Número Préstamo</th>
                           <th>Cliente</th>
                           <th>Monto Financiado</th>
-                          <th>Tasa</th>
+                          <th>Tasa %</th>
                           <th>Interés Total</th>
                           <th>Monto Total</th>
                           <th>Cuotas</th>
-                          <th>Pendientes</th>
-                          <th>Pagadas</th>
                           <th>Analista</th>
-                          <th>Fecha Creación</th>
-                          <th>Fecha Desembolso</th>
-                          <th>Moneda</th>
+                          <th>Fecha Emisión</th>
+                          <th>Capital Cuota Mes</th>
+                          <th>Interés Cuota Mes</th>
+                          <th>Total Cuota</th>
                         </tr>
                       </thead>
                       <tbody>
                         {filteredData.length === 0 ? (
                           <tr>
-                            <td colSpan={14} className="text-center py-4">
+                            <td colSpan={13} className="text-center py-4">
                               <div className="text-muted">
                                 {loanData.length === 0 
                                   ? 'No hay datos disponibles' 
@@ -764,40 +779,31 @@ export default function ReportesFinanciacionPage() {
                             <tr key={loan.loan_id}>
                               <td>{loan.loan_id}</td>
                               <td>
-                                <strong>{loan.loan_number}</strong>
+                                <strong>{loan.numero_prestamo}</strong>
                               </td>
                               <td>
                                 <div style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {loan.nombre_cliente}
                                 </div>
                               </td>
-                              <td className="text-end">${formatCurrency(loan.monto_financiado)}</td>
-                              <td className="text-center">{loan.tasa_interes}%</td>
-                              <td className="text-end">${formatCurrency(loan.interes_total)}</td>
+                              <td className="text-end">${formatCurrency(loan.capital_sin_interes)}</td>
+                              <td className="text-center">{loan.porcentaje_interes}%</td>
+                              <td className="text-end">${formatCurrency(loan.total_interes)}</td>
                               <td className="text-end">
-                                <strong>${formatCurrency(loan.monto_total)}</strong>
+                                <strong>${formatCurrency(loan.total_capital_mas_interes)}</strong>
                               </td>
-                              <td className="text-center">{loan.total_cuotas}</td>
-                              <td className="text-center">
-                                <span className={`badge ${loan.cuotas_pendientes > 0 ? 'bg-warning' : 'bg-success'}`}>
-                                  {loan.cuotas_pendientes}
-                                </span>
-                              </td>
-                              <td className="text-center">
-                                <span className="badge bg-success">
-                                  {loan.cuotas_pagadas}
-                                </span>
-                              </td>
+                              <td className="text-center">{loan.numero_cuotas}</td>
                               <td>
-                                {loan.analista_asignada ? (
-                                  <span className="badge bg-info">{loan.analista_asignada}</span>
+                                {loan.nombre_analista ? (
+                                  <span className="badge bg-info">{loan.nombre_analista}</span>
                                 ) : (
                                   <span className="badge bg-secondary">Sin asignar</span>
                                 )}
                               </td>
-                              <td>{formatDate(loan.fecha_creacion)}</td>
-                              <td>{formatDate(loan.fecha_desembolso)}</td>
-                              <td>{loan.moneda}</td>
+                              <td>{formatDate(loan.fecha_emision)}</td>
+                              <td className="text-end">${formatCurrency(loan.capital_cuota_mes)}</td>
+                              <td className="text-end">${formatCurrency(loan.interes_cuota_mes)}</td>
+                              <td className="text-end">${formatCurrency(loan.total_cuota_mes)}</td>
                             </tr>
                           ))
                         )}

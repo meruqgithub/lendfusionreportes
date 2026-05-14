@@ -5,7 +5,8 @@ import { Container, Row, Col, Card, Button, Navbar, Nav, Dropdown } from 'react-
 import { 
   BiBarChartAlt2, BiUser, BiCreditCard, BiBell, BiLogOut,
   BiTrendingUp, BiDollar, BiGroup, BiFile, BiHome,
-  BiCalendar, BiPieChartAlt, BiLineChart, BiWallet
+  BiCalendar, BiPieChartAlt, BiLineChart, BiWallet,
+  BiXCircle
 } from 'react-icons/bi'
 import Link from 'next/link'
 import AuthGuard from '@/components/AuthGuard'
@@ -54,12 +55,21 @@ export default function DashboardPage() {
     },
     {
       id: 5,
-      titulo: 'Reportes de Desempeño',
-      descripcion: 'Métricas de rendimiento y KPI',
+      titulo: 'Reporte Notas Credito',
+      descripcion: 'Seguimiento de notas creditos',
       icono: <BiLineChart size={32} className="text-purple" />,
       color: 'purple',
-      ruta: '/dashboard/reportes-desempeno'
+      ruta: '/dashboard/reportes-creditos'
     },
+    {
+      id: 6,
+      titulo: 'Reporte Cancelacion de Financiamientos',
+      descripcion: 'Reporte de Cancelacion de Financiamientos',
+      icono: <BiXCircle  size={32} className="text-purple" />,
+      color: 'danger',
+      ruta: '/dashboard/reportes-cancelacion'
+    },
+    /*
     {
       id: 6,
       titulo: 'Reportes Personalizados',

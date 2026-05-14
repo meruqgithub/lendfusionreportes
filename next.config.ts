@@ -1,8 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    serverComponentsExternalPackages: ['mssql', 'tedious']
-  },
+  serverExternalPackages: ['mssql', 'tedious'],
   eslint: {
     // Deshabilitar ESLint durante el build
     ignoreDuringBuilds: true,

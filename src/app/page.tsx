@@ -21,27 +21,56 @@ export default function LoginPage() {
     }
   }, [router])
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const loginSuccess = (user: string) => {
+    // Guardar estado de login
+    localStorage.setItem('isLoggedIn', 'true')
+    localStorage.setItem('usuario', user)
+    
+    if (rememberMe) {
+      localStorage.setItem('rememberMe', 'true')
+    }
+    
+    // Redirigir al dashboard
+    router.push('/dashboard')
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setError('')
     
     // Convertir a mayúsculas
     const usuarioUpper = usuario.toUpperCase()
     const contrasenaUpper = contrasena.toUpperCase()
     
-    // Validar credenciales
+    // Validar credenciales base (admin quemado)
     if (usuarioUpper === 'ADMN' && contrasenaUpper === 'IMB2022') {
-      // Guardar estado de login
-      localStorage.setItem('isLoggedIn', 'true')
-      localStorage.setItem('usuario', usuarioUpper)
+      loginSuccess(usuarioUpper)
+      return
+    }
+
+    // Validar contra la base de datos
+    try {
+      const response = await fetch('/api/auth', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user: usuarioUpper,
+          password: contrasenaUpper
+        }),
+      })
       
-      if (rememberMe) {
-        localStorage.setItem('rememberMe', 'true')
+      const result = await response.json()
+      
+      if (response.ok && result.success) {
+        loginSuccess(usuarioUpper)
+      } else {
+        setError(result.error || 'Usuario o contraseña incorrectos')
       }
-      
-      // Redirigir al dashboard
-      router.push('/dashboard')
-    } else {
-      setError('Usuario o contraseña incorrectos')
+    } catch (err) {
+      console.error('Error durante la autenticación:', err)
+      setError('Error al conectar con el servidor')
     }
   }
 
@@ -85,6 +114,7 @@ export default function LoginPage() {
                       value={usuario}
                       onChange={handleInputChange(setUsuario)}
                       className={styles.formControl}
+                      style={{ textTransform: 'uppercase' }}
                       required
                     />
                   </Form.Group>
@@ -97,6 +127,7 @@ export default function LoginPage() {
                       value={contrasena}
                       onChange={handleInputChange(setContrasena)}
                       className={styles.formControl}
+                      style={{ textTransform: 'uppercase' }}
                       required
                     />
                   </Form.Group>

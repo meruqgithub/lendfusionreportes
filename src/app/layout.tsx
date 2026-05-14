@@ -8,6 +8,9 @@ const inter = Inter({ subsets: ['latin'] })
 export const metadata: Metadata = {
   title: 'Fi QFI - Financial Services',
   description: 'Sistema de gestión financiera',
+  icons: {
+    icon: '/icon.png',
+  },
 }
 
 export default function RootLayout({

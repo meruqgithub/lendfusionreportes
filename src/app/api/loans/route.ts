@@ -37,31 +37,77 @@ export async function GET(request: NextRequest) {
       pool = await sql.connect(config);
       
       const query = `
-        SELECT 
-          l.id AS loan_id,
-          l.number AS loan_number,
-          p.name AS nombre_cliente,
-          lt.principal AS monto_financiado,
-          lt.interest_rate AS tasa_interes,
-          (SELECT COALESCE(SUM(lsi.interest), 0) FROM export_loan_schedule_item lsi WHERE lsi.terms_id = lt.id) AS interes_total,
-          ROUND(lt.principal + ((SELECT COALESCE(SUM(lsi.interest), 0) FROM export_loan_schedule_item lsi WHERE lsi.terms_id = lt.id)), 2) AS monto_total,
-          (SELECT COUNT(*) FROM export_loan_schedule_item lsi WHERE lsi.terms_id = lt.id) AS total_cuotas,
-          (SELECT COUNT(*) FROM export_loan_schedule_item lsi WHERE lsi.terms_id = lt.id AND lsi.payment_status = 'unpaid') AS cuotas_pendientes,
-          (SELECT COUNT(*) FROM export_loan_schedule_item lsi WHERE lsi.terms_id = lt.id AND lsi.payment_status = 'paid') AS cuotas_pagadas,
-          ISNULL(a.name, '') AS analista_asignada,
-          CONVERT(varchar, l.created, 120) AS fecha_creacion,
-          CONVERT(varchar, l.issued, 120) AS fecha_desembolso,
-          l.currency AS moneda
-        FROM export_loan l
-        INNER JOIN export_loan_terms lt ON l.id = lt.loan_id AND lt.status = 'active'
-        LEFT JOIN export_loan_party lp ON lt.id = lp.terms_id AND lp.role = 'borrower'
-        LEFT JOIN export_party p ON lp.party_id = p.id
-        LEFT JOIN export_loan_application la ON l.id = la.loan_id
-        LEFT JOIN export_application ap ON la.application_id = ap.id
-        LEFT JOIN export_admin a ON ap.analyst_manager_id = a.id
-        WHERE l.status = 'issued' 
-          AND l.state = 'normal'
-        ORDER BY l.created DESC
+        WITH 
+-- Información del préstamo y sus términos activos
+prestamos AS (
+    SELECT
+        l.id AS loan_id,
+        l.number AS numero_prestamo,
+        l.issued AS fecha_emision,
+        t.principal AS capital_sin_interes,
+        t.interest_rate AS porcentaje_interes,
+        t.id AS terms_id
+    FROM export_loan l
+    INNER JOIN export_loan_terms t ON l.current_terms_id = t.id
+    WHERE l.status = 'issued'   -- Solo préstamos emitidos
+),
+-- Cliente (prestatario) a través de export_loan_party
+cliente AS (
+    SELECT
+        lp.terms_id,
+        p.name AS nombre_cliente
+    FROM export_loan_party lp
+    INNER JOIN export_party p ON lp.party_id = p.id
+    WHERE lp.role = 'borrower' AND lp.status = 'active'
+),
+-- Analista asignado (a través de la solicitud)
+analista AS (
+    SELECT
+        la.loan_id,
+        a.name AS nombre_analista
+    FROM export_loan_application la
+    INNER JOIN export_application app ON la.application_id = app.id
+    LEFT JOIN export_admin a ON app.analyst_manager_id = a.id
+),
+-- Totales de la tabla de amortización
+totales_cuotas AS (
+    SELECT
+        terms_id,
+        SUM(interest) AS total_interes,
+        SUM(principal + interest) AS total_capital_mas_interes,
+        COUNT(*) AS numero_cuotas
+    FROM export_loan_schedule_item
+    GROUP BY terms_id
+),
+-- Primera cuota de cada préstamo
+primera_cuota AS (
+    SELECT
+        terms_id,
+        principal AS capital_cuota_mes,
+        interest AS interes_cuota_mes,
+        (principal + interest) AS total_cuota_mes,
+        ROW_NUMBER() OVER (PARTITION BY terms_id ORDER BY duedate) AS rn
+    FROM export_loan_schedule_item
+)
+SELECT
+    p.fecha_emision,
+    p.numero_prestamo,
+    c.nombre_cliente,
+    a.nombre_analista,
+    p.capital_sin_interes,
+    p.porcentaje_interes,
+    t.total_interes,
+    t.total_capital_mas_interes,
+    t.numero_cuotas,
+    pc.capital_cuota_mes,
+    pc.interes_cuota_mes,
+    pc.total_cuota_mes
+FROM prestamos p
+LEFT JOIN cliente c ON p.terms_id = c.terms_id
+LEFT JOIN analista a ON p.loan_id = a.loan_id
+INNER JOIN totales_cuotas t ON p.terms_id = t.terms_id
+INNER JOIN primera_cuota pc ON p.terms_id = pc.terms_id AND pc.rn = 1
+ORDER BY p.fecha_emision;
       `;
       
       const result = await pool.request().query(query);
