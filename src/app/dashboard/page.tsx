@@ -39,20 +39,23 @@ export default function DashboardPage() {
     },
     {
       id: 3,
-      titulo: 'Reportes de Riesgo',
-      descripcion: 'Análisis de riesgo crediticio',
+      titulo: 'Reporte Estado de Cuenta',
+      descripcion: 'Reporte Estado de Cuenta',
       icono: <BiPieChartAlt size={32} className="text-warning" />,
       color: 'warning',
-      ruta: '/dashboard/reportes-riesgo'
+      ruta: '/dashboard/reportes-estadocuenta'
     },
-    {
+
+     {
       id: 4,
-      titulo: 'Reportes de Cobranza',
-      descripcion: 'Seguimiento y estado de cobranzas',
-      icono: <BiWallet size={32} className="text-info" />,
-      color: 'info',
-      ruta: '/dashboard/reportes-cobranza'
+      titulo: 'Reporte de Débitos',
+      descripcion: 'Movimientos de débito de préstamos',
+      icono: <BiTrendingUp size={32} className="text-dark" />,
+      color: 'dark',
+      ruta: '/dashboard/reportes-debitos'
     },
+
+   
     {
       id: 5,
       titulo: 'Reporte Notas Credito',
@@ -69,22 +72,8 @@ export default function DashboardPage() {
       color: 'danger',
       ruta: '/dashboard/reportes-cancelacion'
     },
-    {
-      id: 7,
-      titulo: 'Reporte Estado de Cuenta',
-      descripcion: 'Estado de cuenta por préstamo',
-      icono: <BiFile size={32} className="text-secondary" />,
-      color: 'secondary',
-      ruta: '/dashboard/reportes-estadocuenta'
-    },
-    {
-      id: 8,
-      titulo: 'Reporte de Débitos',
-      descripcion: 'Movimientos de débito de préstamos',
-      icono: <BiTrendingUp size={32} className="text-dark" />,
-      color: 'dark',
-      ruta: '/dashboard/reportes-debitos'
-    }
+
+   
   ]
 
   return (
