@@ -242,7 +242,7 @@ export default function ReportesDebitosPage() {
       head:     headers,
       body:     body,
       theme:    'grid',
-      headStyles:        { fillColor: [33, 37, 41], textColor: 255, fontSize: 8 },
+      headStyles:        { fillColor: [41, 128, 185], textColor: 255, fontSize: 8 },
       bodyStyles:        { fontSize: 7 },
       alternateRowStyles:{ fillColor: [245, 245, 245] },
       margin: { left: 14, right: 14 }
@@ -269,7 +269,7 @@ export default function ReportesDebitosPage() {
         <Container fluid className="p-4">
           <div className="d-flex justify-content-center align-items-center" style={{ height: '50vh' }}>
             <div className="text-center">
-              <div className="spinner-border text-dark mb-3" role="status">
+              <div className="spinner-border text-primary mb-3" role="status">
                 <span className="visually-hidden">Cargando...</span>
               </div>
               <p>Cargando datos de débitos...</p>
@@ -291,7 +291,7 @@ export default function ReportesDebitosPage() {
             <div className="d-flex justify-content-between align-items-center">
               <div>
                 <h1 className="h3 mb-0">
-                  <BiTrendingUp className="me-2 text-dark" />
+                  <BiTrendingUp className="me-2 text-primary" />
                   Reporte de Débitos
                 </h1>
                 <nav aria-label="breadcrumb">
@@ -308,19 +308,19 @@ export default function ReportesDebitosPage() {
 
               <div className="d-flex gap-2">
                 <Link href="/dashboard" passHref legacyBehavior>
-                  <Button variant="outline-secondary">
+                  <Button variant="outline-primary">
                     <BiArrowBack className="me-1" />
                     Volver
                   </Button>
                 </Link>
 
-                <Button variant="outline-dark" onClick={loadData}>
+                <Button variant="outline-success" onClick={loadData}>
                   <BiRefresh className="me-1" />
                   Actualizar
                 </Button>
 
                 <Dropdown>
-                  <Dropdown.Toggle variant="dark" id="dropdown-export-debitos">
+                  <Dropdown.Toggle variant="primary" id="dropdown-export-debitos">
                     <BiDownload className="me-1" />
                     Exportar
                   </Dropdown.Toggle>
@@ -357,23 +357,23 @@ export default function ReportesDebitosPage() {
           </Row>
         )}
 
-        {/* ── Card resumen ── */}
+        {/* ── Cards de resumen ── */}
         <Row className="mb-4">
-          <Col md={4}>
-            <Card className="border-dark shadow-sm">
+          <Col md={3}>
+            <Card className="text-center">
               <Card.Body>
-                <div className="d-flex justify-content-between align-items-center">
-                  <div>
-                    <h6 className="text-muted mb-1">Monto Total Débitos</h6>
-                    <h3 className="mb-0 fw-bold">
-                      ${formatCurrency(montoTotal)}
-                    </h3>
-                    <small className="text-muted">{filteredData.length} registros</small>
-                  </div>
-                  <div className="bg-dark p-3 rounded-circle">
-                    <BiDollar size={28} className="text-white" />
-                  </div>
-                </div>
+                <BiTrendingUp className="text-success fs-2" />
+                <h6>Total Registros</h6>
+                <h5>{filteredData.length}</h5>
+              </Card.Body>
+            </Card>
+          </Col>
+          <Col md={3}>
+            <Card className="text-center">
+              <Card.Body>
+                <BiDollar className="text-primary fs-2" />
+                <h6>Monto Total Débitos</h6>
+                <h5>${formatCurrency(montoTotal)}</h5>
               </Card.Body>
             </Card>
           </Col>
@@ -395,8 +395,7 @@ export default function ReportesDebitosPage() {
                 </div>
 
                 <Row>
-                  {/* Número de préstamo */}
-                  <Col md={3}>
+                  <Col md={2}>
                     <Form.Group className="mb-3">
                       <Form.Label>Número de Préstamo</Form.Label>
                       <InputGroup>
@@ -410,8 +409,7 @@ export default function ReportesDebitosPage() {
                     </Form.Group>
                   </Col>
 
-                  {/* Nombre cliente */}
-                  <Col md={3}>
+                  <Col md={2}>
                     <Form.Group className="mb-3">
                       <Form.Label>Nombre del Cliente</Form.Label>
                       <InputGroup>
@@ -425,7 +423,6 @@ export default function ReportesDebitosPage() {
                     </Form.Group>
                   </Col>
 
-                  {/* Analista */}
                   <Col md={2}>
                     <Form.Group className="mb-3">
                       <Form.Label>Analista</Form.Label>
@@ -440,7 +437,6 @@ export default function ReportesDebitosPage() {
                     </Form.Group>
                   </Col>
 
-                  {/* Fecha Desde */}
                   <Col md={2}>
                     <Form.Group className="mb-3">
                       <Form.Label>Fecha Desde</Form.Label>
@@ -448,11 +444,11 @@ export default function ReportesDebitosPage() {
                         type="date"
                         value={dateFromFilter}
                         onChange={e => setDateFromFilter(e.target.value)}
+                        max={dateToFilter || undefined}
                       />
                     </Form.Group>
                   </Col>
 
-                  {/* Fecha Hasta */}
                   <Col md={2}>
                     <Form.Group className="mb-3">
                       <Form.Label>Fecha Hasta</Form.Label>
@@ -460,6 +456,7 @@ export default function ReportesDebitosPage() {
                         type="date"
                         value={dateToFilter}
                         onChange={e => setDateToFilter(e.target.value)}
+                        min={dateFromFilter || undefined}
                       />
                     </Form.Group>
                   </Col>
@@ -482,10 +479,10 @@ export default function ReportesDebitosPage() {
                   <div className="d-flex justify-content-between align-items-center">
                     <h5 className="mb-0">Detalle de Débitos</h5>
                     <div className="d-flex gap-2">
-                      <Button variant="outline-dark" size="sm" onClick={exportToPDF}>
+                      <Button variant="outline-primary" size="sm" onClick={exportToPDF}>
                         <BiPrinter className="me-1" />PDF
                       </Button>
-                      <Button variant="dark" size="sm" onClick={exportToExcel}>
+                      <Button variant="primary" size="sm" onClick={exportToExcel}>
                         <BiDownload className="me-1" />Excel
                       </Button>
                     </div>
@@ -532,10 +529,10 @@ export default function ReportesDebitosPage() {
                               </td>
                               <td>{formatDate(record.fecha_cargo)}</td>
                               <td>
-                                <span className="badge bg-dark">{record.descripcion_cargo}</span>
+                                <span className="badge bg-primary">{record.descripcion_cargo}</span>
                               </td>
                               <td className="text-end">
-                                <strong>
+                                <strong className="text-primary">
                                   ${formatCurrency(record.monto)}
                                 </strong>
                               </td>
@@ -546,7 +543,7 @@ export default function ReportesDebitosPage() {
 
                       {filteredData.length > 0 && (
                         <tfoot>
-                          <tr className="table-dark fw-bold">
+                          <tr className="table-primary fw-bold">
                             <td colSpan={6} className="text-end">Monto Total Débitos:</td>
                             <td className="text-end">${formatCurrency(montoTotal)}</td>
                           </tr>
