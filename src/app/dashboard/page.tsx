@@ -68,6 +68,22 @@ export default function DashboardPage() {
       icono: <BiXCircle  size={32} className="text-purple" />,
       color: 'danger',
       ruta: '/dashboard/reportes-cancelacion'
+    },
+    {
+      id: 7,
+      titulo: 'Reporte Estado de Cuenta',
+      descripcion: 'Estado de cuenta por préstamo',
+      icono: <BiFile size={32} className="text-secondary" />,
+      color: 'secondary',
+      ruta: '/dashboard/reportes-estadocuenta'
+    },
+    {
+      id: 8,
+      titulo: 'Reporte de Débitos',
+      descripcion: 'Movimientos de débito de préstamos',
+      icono: <BiTrendingUp size={32} className="text-dark" />,
+      color: 'dark',
+      ruta: '/dashboard/reportes-debitos'
     }
   ]
 
