@@ -4,15 +4,15 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { Container, Row, Col, Card, Button, Form, Table, Dropdown, InputGroup, FormControl, Alert } from 'react-bootstrap'
 import { 
   BiArrowBack, BiDownload, BiFilter, BiCalendar, BiPrinter,
-  BiDollar, BiTrendingUp, BiSearch, BiRefresh, BiX, BiFile, BiTable, BiBuilding
+  BiDollar, BiTrendingUp, BiSearch, BiRefresh, BiX, BiFile, BiTable, BiBuilding, BiUser
 } from 'react-icons/bi'
 import Link from 'next/link'
 import AuthGuard from '@/components/AuthGuard'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import * as XLSX from 'xlsx'
-import jsPDF from 'jspdf'
-import 'jspdf-autotable'
+import { jsPDF } from 'jspdf'
+import * as autoTableModule from 'jspdf-autotable'
 import html2canvas from 'html2canvas'
 
 interface PaymentData {
@@ -37,6 +37,7 @@ export default function ReportesConsolidacionPage() {
   const [bankFilter, setBankFilter] = useState('')
   const [dateFromFilter, setDateFromFilter] = useState('')
   const [dateToFilter, setDateToFilter] = useState('')
+  const [clienteFilter, setClienteFilter] = useState('')
   
   // Estado para totales
   const [totalCantidad, setTotalCantidad] = useState(0)
@@ -52,7 +53,7 @@ export default function ReportesConsolidacionPage() {
   // Aplicar filtros cuando cambien
   useEffect(() => {
     applyFilters()
-  }, [bankFilter, dateFromFilter, dateToFilter, paymentData])
+  }, [bankFilter, dateFromFilter, dateToFilter, clienteFilter,paymentData])
 
   const loadData = async () => {
   try {
@@ -112,6 +113,12 @@ export default function ReportesConsolidacionPage() {
       })
     }
 
+    if (clienteFilter) {
+  filtered = filtered.filter(payment =>
+    payment.NombreCliente?.toLowerCase().includes(clienteFilter.toLowerCase())
+  )
+}
+
     setFilteredData(filtered)
     calculateTotals(filtered)
   }
@@ -125,6 +132,7 @@ export default function ReportesConsolidacionPage() {
     setBankFilter('')
     setDateFromFilter('')
     setDateToFilter('')
+    setClienteFilter('')
   }
 
   const formatCurrency = (amount: number) => {
@@ -262,8 +270,8 @@ export default function ReportesConsolidacionPage() {
   // Exportar a PDF
   const exportToPDF = async () => {
     try {
-      // Crear documento PDF
-      const doc = new jsPDF('landscape')
+      // Crear documento PDF (jsPDF v4: constructor acepta objeto de opciones)
+      const doc = new jsPDF({ orientation: 'landscape' })
       
       // Título
       doc.setFontSize(16)
@@ -312,11 +320,11 @@ export default function ReportesConsolidacionPage() {
         yPos += 10
         
         // Preparar datos para la tabla
-        const headers = [
-          ['Fecha', 'Número', 'Banco', 'Cantidad', 'Referencia', 'Comentario', 'Número Préstamo', 'Nombre Cliente', 'Cédula/RIF']
+        const tableHead = [
+          ['Fecha', 'Número', 'Banco', 'Cantidad', 'Referencia', 'Comentario', 'N° Préstamo', 'Nombre Cliente', 'Cédula/RIF']
         ]
         
-        const data = bankData.map(payment => [
+        const tableBody = bankData.map(payment => [
           formatDate(payment.Fecha),
           payment.Numero.toString(),
           payment.Banco,
@@ -329,23 +337,19 @@ export default function ReportesConsolidacionPage() {
         ])
         
         // Agregar fila de total del banco
-        data.push([
+        tableBody.push([
           `TOTAL ${bankName}`,
-          '',
-          '',
+          '', '',
           `$${formatCurrency(bankTotal)}`,
-          '',
-          '',
-          '',
-          '',
-          ''
+          '', '', '', '', ''
         ])
         
-        // Configurar la tabla
-        ;(doc as any).autoTable({
+        // jspdf-autotable v5: resolución segura del export en Next.js
+        const autoTable = (autoTableModule as any).default ?? (autoTableModule as any).autoTable ?? autoTableModule
+        const result = autoTable(doc, {
           startY: yPos,
-          head: headers,
-          body: data,
+          head: tableHead,
+          body: tableBody,
           theme: 'grid',
           headStyles: {
             fillColor: [41, 128, 185],
@@ -366,23 +370,23 @@ export default function ReportesConsolidacionPage() {
             cellWidth: 'wrap'
           },
           columnStyles: {
-            0: { cellWidth: 25 },  // Fecha
-            1: { cellWidth: 15 },  // Número
-            2: { cellWidth: 25 },  // Banco
-            3: { cellWidth: 20 },  // Cantidad
-            4: { cellWidth: 25 },  // Referencia
-            5: { cellWidth: 30 },  // Comentario
-            6: { cellWidth: 25 },  // Número Préstamo
-            7: { cellWidth: 30 },  // Nombre Cliente
-            8: { cellWidth: 25 }   // Cédula/RIF
+            0: { cellWidth: 25 },
+            1: { cellWidth: 15 },
+            2: { cellWidth: 25 },
+            3: { cellWidth: 20 },
+            4: { cellWidth: 25 },
+            5: { cellWidth: 30 },
+            6: { cellWidth: 25 },
+            7: { cellWidth: 30 },
+            8: { cellWidth: 25 }
           }
         })
         
-        // Actualizar posición Y
-        yPos = (doc as any).lastAutoTable.finalY + 10
+        // jspdf-autotable v5: el finalY viene en el objeto retornado
+        yPos = (result as any)?.finalY ? (result as any).finalY + 10 : yPos + 80
       })
       
-      // Agregar página para total general si hay múltiples bancos
+      // Agregar página para resumen general si hay múltiples bancos
       if (Object.keys(groupedByBank).length > 1) {
         doc.addPage()
         yPos = 20
@@ -393,15 +397,15 @@ export default function ReportesConsolidacionPage() {
         doc.text(`Total General Consolidado: $${formatCurrency(totalCantidad)}`, 14, yPos)
       }
       
-      // Pie de página
-      const pageCount = (doc as any).internal.getNumberOfPages()
+      // Pie de página — jsPDF v4 usa getNumberOfPages() directamente
+      const pageCount = doc.getNumberOfPages()
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i)
         doc.setFontSize(8)
         doc.text(
           `Página ${i} de ${pageCount}`,
-          doc.internal.pageSize.width - 30,
-          doc.internal.pageSize.height - 10
+          doc.internal.pageSize.getWidth() - 30,
+          doc.internal.pageSize.getHeight() - 10
         )
       }
       
@@ -419,6 +423,13 @@ export default function ReportesConsolidacionPage() {
     const banks = new Set(paymentData.map(payment => payment.Banco).filter(b => b))
     return Array.from(banks).sort()
   }, [paymentData])
+
+  const uniqueClients = useMemo(() => {
+  const clients = new Set(paymentData.map(p => p.NombreCliente).filter(c => c))
+  return Array.from(clients).sort()
+}, [paymentData])
+
+
 
   if (loading) {
     return (
@@ -546,6 +557,34 @@ export default function ReportesConsolidacionPage() {
                       </InputGroup>
                     </Form.Group>
                   </Col>
+
+
+
+                  <Col md={4}>
+                      <Form.Group className="mb-3">
+                        <Form.Label>
+                          <BiUser className="me-1" />
+                          Nombre del Cliente
+                        </Form.Label>
+                        <InputGroup>
+                          <InputGroup.Text>
+                            <BiSearch />
+                          </InputGroup.Text>
+                          <FormControl
+                            placeholder="Buscar cliente..."
+                            value={clienteFilter}
+                            onChange={(e) => setClienteFilter(e.target.value)}
+                            list="clientSuggestions"
+                          />
+                          <datalist id="clientSuggestions">
+                            {uniqueClients.map((client, index) => (
+                              <option key={index} value={client} />
+                            ))}
+                          </datalist>
+                        </InputGroup>
+                      </Form.Group>
+                    </Col>
+
                   
                   <Col md={4}>
                     <Form.Group className="mb-3">

@@ -15,8 +15,8 @@ import AuthGuard from '@/components/AuthGuard';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import { jsPDF } from 'jspdf';
+import * as autoTableModule from 'jspdf-autotable';
 
 // Interfaz para los datos de balance
 interface BalanceData {
@@ -413,14 +413,21 @@ export default function ReportesEstadoCuentaPage() {
   // Exportar a PDF
   const exportToPDF = async () => {
     try {
-      const doc = new jsPDF('landscape');
+      // jsPDF v4: constructor acepta objeto de opciones
+      const doc = new jsPDF({ orientation: 'landscape' });
+
+      // jspdf-autotable v5: resolución segura del export en Next.js
+      const autoTable = (autoTableModule as any).default ?? (autoTableModule as any).autoTable ?? autoTableModule;
 
       doc.setFontSize(16);
+      doc.setTextColor(41, 128, 185);
       doc.text('Reporte de Estado de Cuenta', 14, 15);
-      doc.setFontSize(10);
+      doc.setFontSize(9);
+      doc.setTextColor(100, 100, 100);
       doc.text(`Generado el: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 22);
+      doc.text(`Total de préstamos: ${Object.keys(loanSummary).length}`, 14, 27);
 
-      let yPos = 30;
+      let yPos = 34;
       const filters: string[] = [];
       if (loanNumberFilter) filters.push(`Préstamo: ${loanNumberFilter}`);
       if (clientNameFilter) filters.push(`Cliente: ${clientNameFilter}`);
@@ -431,23 +438,25 @@ export default function ReportesEstadoCuentaPage() {
       }
       if (daysRangeFilter) {
         const range = daysRanges.find(r => r.value === daysRangeFilter);
-        if (range) filters.push(`Rango días atraso: ${range.label}`);
+        if (range) filters.push(`Rango: ${range.label}`);
       }
       if (filters.length > 0) {
-        doc.setFontSize(10);
-        doc.text(`Filtros: ${filters.join(', ')}`, 14, yPos);
-        yPos += 8;
+        doc.setFontSize(9);
+        doc.setTextColor(80, 80, 80);
+        doc.text(`Filtros: ${filters.join(' | ')}`, 14, yPos);
+        yPos += 7;
       }
 
-      doc.setFontSize(11);
-      doc.text(`Total Capital Cuotas: $${formatCurrency(totalCapitalCuota)}`, 14, yPos);
-      yPos += 6;
-      doc.text(`Total Intereses: $${formatCurrency(totalInteresCuota)}`, 14, yPos);
-      yPos += 6;
-      doc.text(`Total Cuota+Interés: $${formatCurrency(totalCuotaInteres)}`, 14, yPos);
-      yPos += 6;
-      doc.text(`Total Pagado: $${formatCurrency(totalPagado)}`, 14, yPos);
-      yPos += 10;
+      // Barra de totales generales
+      doc.setFillColor(41, 128, 185);
+      doc.rect(14, yPos, 268, 12, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(8);
+      doc.text(`Capital Cuotas: $${formatCurrency(totalCapitalCuota)}`, 16, yPos + 5);
+      doc.text(`Intereses: $${formatCurrency(totalInteresCuota)}`, 80, yPos + 5);
+      doc.text(`Cuota+Interés: $${formatCurrency(totalCuotaInteres)}`, 150, yPos + 5);
+      doc.text(`Total Pagado: $${formatCurrency(totalPagado)}`, 220, yPos + 5);
+      yPos += 18;
 
       Object.entries(loanSummary).forEach(([loanNumber, loan], index) => {
         if (index > 0) {
@@ -455,92 +464,106 @@ export default function ReportesEstadoCuentaPage() {
           yPos = 20;
         }
 
-        doc.setFontSize(12);
-        doc.text(`Préstamo: ${loanNumber} - ${loan.cliente} (${loan.cedula})`, 14, yPos);
+        // Encabezado del préstamo
+        doc.setFontSize(11);
+        doc.setTextColor(41, 128, 185);
+        doc.text(`Préstamo: ${loanNumber} - ${loan.cliente ?? ''} (${loan.cedula ?? ''})`, 14, yPos);
         yPos += 6;
-        doc.setFontSize(10);
-        doc.text(`Ciudad: ${loan.ciudad} | Dirección: ${loan.direccion}`, 14, yPos);
+        doc.setFontSize(8);
+        doc.setTextColor(80, 80, 80);
+        doc.text(`Ciudad: ${loan.ciudad ?? ''} | Dirección: ${loan.direccion ?? ''}`, 14, yPos);
         yPos += 5;
-        doc.text(`Monto Financiado: $${formatCurrency(loan.montoFinanciado)} | Tasa: ${loan.tasa}% | Total Cuotas: ${loan.totalCuotas}`, 14, yPos);
+        doc.text(`Financiado: $${formatCurrency(loan.montoFinanciado ?? 0)} | Tasa: ${loan.tasa ?? 0}% | Cuotas: ${loan.totalCuotas ?? 0}`, 14, yPos);
         yPos += 5;
-        doc.text(`Vendedor: ${loan.vendedor} | Analista: ${loan.analista}`, 14, yPos);
+        doc.text(`Vendedor: ${loan.vendedor ?? ''} | Analista: ${loan.analista ?? ''}`, 14, yPos);
         yPos += 8;
 
-        const headers = [['N° Cuota', 'Capital', 'Interés', 'Cuota+Interés', 'Pagado', 'Vencimiento', 'Estado', 'Días']];
-        const data = loan.installments.map((item: BalanceData) => {
+        const tableHead = [['N° Cuota', 'Capital', 'Interés', 'Cuota+Interés', 'Pagado', 'Vencimiento', 'Estado', 'Días']];
+        const tableBody = loan.installments.map((item: BalanceData) => {
           let daysDisplay = '-';
           if (item['Estado cuota'] === 'VENCIDO' && item['Dias para vencer'] < 0) {
-            daysDisplay = Math.abs(item['Dias para vencer']).toString();
-          } else if (item['Estado cuota'] !== 'PAGADO' && item['Dias para vencer'] > 0) {
-            daysDisplay = item['Dias para vencer'].toString();
+            daysDisplay = Math.abs(item['Dias para vencer'] ?? 0).toString();
+          } else if (item['Estado cuota'] !== 'PAGADO' && (item['Dias para vencer'] ?? 0) > 0) {
+            daysDisplay = (item['Dias para vencer'] ?? 0).toString();
           }
           return [
-            item['Numero de cuota'].toString(),
-            `$${formatCurrency(item['Monto capital cuota'])}`,
-            `$${formatCurrency(item['Monto interes cuota'])}`,
-            `$${formatCurrency(item['Cuota + interes'])}`,
-            `$${formatCurrency(item['Pagado'])}`,
-            formatDate(item['Fecha de vencimiento']),
-            item['Estado cuota'],
+            (item['Numero de cuota'] ?? '').toString(),
+            `$${formatCurrency(item['Monto capital cuota'] ?? 0)}`,
+            `$${formatCurrency(item['Monto interes cuota'] ?? 0)}`,
+            `$${formatCurrency(item['Cuota + interes'] ?? 0)}`,
+            `$${formatCurrency(item['Pagado'] ?? 0)}`,
+            formatDate(item['Fecha de vencimiento'] ?? ''),
+            item['Estado cuota'] ?? '',
             daysDisplay
           ];
         });
 
         const totalCapital = calculateLoanTotal(loan.installments, 'Monto capital cuota');
         const totalInteres = calculateLoanTotal(loan.installments, 'Monto interes cuota');
-        const totalCuotaInteres = calculateLoanTotal(loan.installments, 'Cuota + interes');
+        const totalCuotaInteresLoan = calculateLoanTotal(loan.installments, 'Cuota + interes');
         const totalPagadoLoan = calculateLoanTotal(loan.installments, 'Pagado');
 
-        data.push([
+        tableBody.push([
           'TOTAL',
           `$${formatCurrency(totalCapital)}`,
           `$${formatCurrency(totalInteres)}`,
-          `$${formatCurrency(totalCuotaInteres)}`,
+          `$${formatCurrency(totalCuotaInteresLoan)}`,
           `$${formatCurrency(totalPagadoLoan)}`,
-          '',
-          '',
-          ''
+          '', '', ''
         ]);
 
-        (doc as any).autoTable({
+        const result = autoTable(doc, {
           startY: yPos,
-          head: headers,
-          body: data,
+          head: tableHead,
+          body: tableBody,
           theme: 'grid',
-          headStyles: { fillColor: [41, 128, 185], textColor: 255, fontSize: 8 },
+          headStyles: { fillColor: [41, 128, 185], textColor: 255, fontSize: 8, fontStyle: 'bold' },
           bodyStyles: { fontSize: 7 },
-          alternateRowStyles: { fillColor: [245, 245, 245] },
+          alternateRowStyles: { fillColor: [240, 248, 255] },
+          didParseCell: (data: any) => {
+            if (data.row.index === tableBody.length - 1) {
+              data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.fillColor = [41, 128, 185];
+              data.cell.styles.textColor = [255, 255, 255];
+            }
+          },
           margin: { left: 14, right: 14 },
           columnStyles: {
-            0: { cellWidth: 15 },
-            1: { cellWidth: 20 },
-            2: { cellWidth: 20 },
-            3: { cellWidth: 22 },
-            4: { cellWidth: 20 },
-            5: { cellWidth: 25 },
-            6: { cellWidth: 20 },
-            7: { cellWidth: 15 }
+            0: { cellWidth: 15, halign: 'center' },
+            1: { cellWidth: 25, halign: 'right' },
+            2: { cellWidth: 25, halign: 'right' },
+            3: { cellWidth: 28, halign: 'right' },
+            4: { cellWidth: 25, halign: 'right' },
+            5: { cellWidth: 28 },
+            6: { cellWidth: 22, halign: 'center' },
+            7: { cellWidth: 18, halign: 'center' }
           }
         });
 
-        yPos = (doc as any).lastAutoTable.finalY + 10;
+        // jspdf-autotable v5: finalY viene en el objeto retornado
+        yPos = (result as any)?.finalY ? (result as any).finalY + 10 : yPos + 80;
       });
 
-      const pageCount = (doc as any).internal.getNumberOfPages();
+      // Pie de página — jsPDF v4 usa getNumberOfPages() directamente
+      const pageCount = doc.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
-        doc.setFontSize(8);
+        doc.setFontSize(7);
+        doc.setTextColor(150, 150, 150);
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
         doc.text(
-          `Página ${i} de ${pageCount}`,
-          doc.internal.pageSize.width - 30,
-          doc.internal.pageSize.height - 10
+          `Página ${i} de ${pageCount}  |  Estado de Cuenta LendFusion`,
+          pageWidth / 2,
+          pageHeight - 5,
+          { align: 'center' }
         );
       }
 
       doc.save(`estado_cuenta_${new Date().toISOString().split('T')[0]}.pdf`);
     } catch (error) {
       console.error('Error al generar PDF:', error);
-      alert('Error al generar el PDF. Por favor, intente exportar en otro formato.');
+      alert('Error al generar el PDF. Verifique la consola para más detalles.');
     }
   };
 

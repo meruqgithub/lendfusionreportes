@@ -14,8 +14,8 @@ import AuthGuard from '@/components/AuthGuard'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import * as XLSX from 'xlsx'
-import jsPDF from 'jspdf'
-import 'jspdf-autotable'
+import { jsPDF } from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 /* ─── Tipo que coincide con el SELECT del API ─── */
 interface DebitRecord {
@@ -149,6 +149,86 @@ export default function ReportesDebitosPage() {
     }
   }
 
+
+// ==================== FUNCIONES DE AGRUPACIÓN ACTUALIZADAS ====================
+// ==================== FUNCIONES DE AGRUPACIÓN ACTUALIZADAS ====================
+const getConcept = (descripcion: string): string => {
+  const d = descripcion.toLowerCase()
+  
+  // Patrón Issue fee: "texto" o Issue fee: 'texto'
+  const issueFeeMatch = d.match(/issue fee:\s*["']([^"']+)["']/i)
+  if (issueFeeMatch) {
+    let inner = issueFeeMatch[1].toLowerCase().trim()
+    // Normalizar "seguro vehiculo" (sin 'de') a "seguro de vehiculo"
+    if (inner.includes('seguro vehiculo') || inner.includes('seguro vehículo')) {
+      inner = 'seguro de vehiculo'
+    }
+    // Mapear inner a categorías específicas
+    if (inner.includes('seguro de vida')) return 'Seguro de Vida'
+    if (inner.includes('seguro de vehiculo')) return 'Seguro de Vehículo'
+    if (inner.includes('gastos administrativo') || inner.includes('gastos administrativos')) 
+      return 'Gastos Administrativo'
+    if (inner.includes('gps')) return 'GPS'
+    if (inner.includes('flat')) return 'FLAT'
+    if (inner.includes('ajuste saldos a favor')) return 'AJUSTE SALDOS A FAVOR'
+    if (inner.includes('gastos de análisis')) return 'Gastos de Análisis'
+    // Para otros textos dentro de comillas, devolver el texto original capitalizado
+    return inner.split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+  }
+  
+  // Detección directa (sin "Issue fee")
+  // Normalizar "seguro vehiculo" a "seguro de vehiculo"
+  let directDesc = d
+  if (directDesc.includes('seguro vehiculo') || directDesc.includes('seguro vehículo')) {
+    directDesc = directDesc.replace(/seguro vehiculo/gi, 'seguro de vehiculo').replace(/seguro vehículo/gi, 'seguro de vehiculo')
+  }
+  if (directDesc.includes('seguro de vida')) return 'Seguro de Vida'
+  if (directDesc.includes('seguro de vehiculo')) return 'Seguro de Vehículo'
+  if (directDesc.includes('flat')) return 'FLAT'
+  if (directDesc.includes('ajuste saldos a favor')) return 'AJUSTE SALDOS A FAVOR'
+  if (directDesc.includes('gps')) return 'GPS'
+  if (directDesc.includes('gastos de análisis') || directDesc.includes('analisis')) return 'Gastos de Análisis'
+  if (directDesc.includes('gastos administrativo') || directDesc.includes('gastos administrativos')) return 'Gastos Administrativo'
+  
+  // Si contiene "seguro" pero no es vida ni vehículo, ir a "Otros conceptos"
+  if (d.includes('seguro')) return 'Otros conceptos'
+  
+  return 'Otros conceptos'
+}
+
+// Orden de presentación de los grupos
+const CONCEPT_ORDER = [
+  'FLAT',
+  'Seguro de Vida',
+  'Seguro de Vehículo',
+  'AJUSTE SALDOS A FAVOR',
+  'GPS',
+  'Gastos de Análisis',
+  'Gastos Administrativo'
+]
+
+const groupByConcept = (data: DebitRecord[]): Map<string, DebitRecord[]> => {
+  const map = new Map<string, DebitRecord[]>()
+  for (const record of data) {
+    const concept = getConcept(record.descripcion_cargo)
+    if (!map.has(concept)) map.set(concept, [])
+    map.get(concept)!.push(record)
+  }
+  // Ordenar según CONCEPT_ORDER, luego el resto alfabéticamente
+  const sortedMap = new Map<string, DebitRecord[]>()
+  for (const key of CONCEPT_ORDER) {
+    if (map.has(key)) {
+      sortedMap.set(key, map.get(key)!)
+      map.delete(key)
+    }
+  }
+  const remaining = Array.from(map.keys()).sort()
+  for (const key of remaining) {
+    sortedMap.set(key, map.get(key)!)
+  }
+  return sortedMap
+}
+
   /* ─── Exportar CSV ─── */
   const exportToCSV = () => {
     const headers = ['Número Préstamo', 'Nombre Cliente', 'Analista', 'Fecha Cargo', 'Descripción', 'Monto']
@@ -200,34 +280,61 @@ export default function ReportesDebitosPage() {
     XLSX.writeFile(wb, `reporte_debitos_${new Date().toISOString().split('T')[0]}.xlsx`)
   }
 
-  /* ─── Exportar PDF ─── */
-  const exportToPDF = () => {
-    const doc = new jsPDF('landscape')
+  /* ─── Exportar PDF (con agrupación por concepto) ─── */
+const exportToPDF = () => {
+  const doc = new jsPDF('landscape')
 
-    doc.setFontSize(16)
-    doc.text('Reporte de Débitos', 14, 15)
-    doc.setFontSize(10)
-    doc.text(`Generado el: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 22)
+  // Título y metadatos
+  doc.setFontSize(16)
+  doc.text('Reporte de Débitos', 14, 15)
+  doc.setFontSize(10)
+  doc.text(`Generado el: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 22)
 
-    let yPos = 30
-    const filters: string[] = []
-    if (loanNumberFilter) filters.push(`Préstamo: ${loanNumberFilter}`)
-    if (clientNameFilter)  filters.push(`Cliente: ${clientNameFilter}`)
-    if (analistaFilter)    filters.push(`Analista: ${analistaFilter}`)
-    if (dateFromFilter || dateToFilter)
-      filters.push(`Fecha: ${dateFromFilter || 'inicio'} → ${dateToFilter || 'fin'}`)
+  let yPos = 30
+  const filters: string[] = []
+  if (loanNumberFilter) filters.push(`Préstamo: ${loanNumberFilter}`)
+  if (clientNameFilter)  filters.push(`Cliente: ${clientNameFilter}`)
+  if (analistaFilter)    filters.push(`Analista: ${analistaFilter}`)
+  if (dateFromFilter || dateToFilter)
+    filters.push(`Fecha: ${dateFromFilter || 'inicio'} → ${dateToFilter || 'fin'}`)
 
-    if (filters.length) {
-      doc.text(`Filtros: ${filters.join(', ')}`, 14, yPos)
-      yPos += 8
+  if (filters.length) {
+    doc.text(`Filtros: ${filters.join(', ')}`, 14, yPos)
+    yPos += 8
+  }
+
+  doc.setFontSize(11)
+  doc.text(`Monto Total General: $${formatCurrency(montoTotal)}`, 14, yPos)
+  yPos += 10
+
+  // Agrupar los datos filtrados por concepto
+  const grouped = groupByConcept(filteredData)
+
+  if (filteredData.length === 0) {
+    doc.text('No hay registros para los filtros seleccionados.', 14, yPos + 20)
+    doc.save(`reporte_debitos_${new Date().toISOString().split('T')[0]}.pdf`)
+    return
+  }
+
+  let isFirstGroup = true
+  for (const [concept, records] of grouped.entries()) {
+    if (!isFirstGroup) {
+      doc.addPage()
+      yPos = 20
     }
+    isFirstGroup = false
 
-    doc.setFontSize(11)
-    doc.text(`Monto Total: $${formatCurrency(montoTotal)}`, 14, yPos)
-    yPos += 10
+    doc.setFontSize(14)
+    doc.text(`Concepto: ${concept}`, 14, yPos)
+    yPos += 8
+
+    const subtotal = records.reduce((sum, r) => sum + r.monto, 0)
+    doc.setFontSize(10)
+    doc.text(`Subtotal: $${formatCurrency(subtotal)}`, 14, yPos)
+    yPos += 8
 
     const headers = [['Nº Préstamo', 'Cliente', 'Analista', 'Fecha', 'Descripción', 'Monto']]
-    const body = filteredData.map(r => [
+    const body = records.map(r => [
       r.numero_prestamo,
       r.nombre_cliente,
       r.analista || '—',
@@ -235,32 +342,50 @@ export default function ReportesDebitosPage() {
       r.descripcion_cargo,
       `$${formatCurrency(r.monto)}`
     ])
-    body.push(['TOTALES', '', '', '', '', `$${formatCurrency(montoTotal)}`])
+    body.push(['', '', '', '', `SUBTOTAL ${concept}`, `$${formatCurrency(subtotal)}`])
 
-    ;(doc as any).autoTable({
-      startY:   yPos,
-      head:     headers,
-      body:     body,
-      theme:    'grid',
-      headStyles:        { fillColor: [41, 128, 185], textColor: 255, fontSize: 8 },
-      bodyStyles:        { fontSize: 7 },
-      alternateRowStyles:{ fillColor: [245, 245, 245] },
-      margin: { left: 14, right: 14 }
+    // Usar autoTable importada directamente
+    autoTable(doc, {
+      startY: yPos,
+      head: headers,
+      body: body,
+      theme: 'grid',
+      headStyles: { fillColor: [41, 128, 185], textColor: 255, fontSize: 8 },
+      bodyStyles: { fontSize: 7 },
+      alternateRowStyles: { fillColor: [245, 245, 245] },
+      margin: { left: 14, right: 14 },
+      didDrawCell: (data: any) => {
+        if (data.row.section === 'body' && data.row.index === body.length - 1) {
+          doc.setFillColor(220, 220, 220)
+          doc.rect(data.cell.x, data.cell.y, data.cell.width, data.cell.height, 'F')
+        }
+      }
     })
 
-    const pageCount = (doc as any).internal.getNumberOfPages()
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i)
-      doc.setFontSize(8)
-      doc.text(
-        `Página ${i} de ${pageCount}`,
-        doc.internal.pageSize.width - 30,
-        doc.internal.pageSize.height - 10
-      )
-    }
-
-    doc.save(`reporte_debitos_${new Date().toISOString().split('T')[0]}.pdf`)
+    yPos = (doc as any).lastAutoTable.finalY + 10
   }
+
+  // Página de resumen general
+  doc.addPage()
+  doc.setFontSize(16)
+  doc.text('Resumen General', 14, 20)
+  doc.setFontSize(12)
+  doc.text(`Total General de Débitos: $${formatCurrency(montoTotal)}`, 14, 30)
+
+  // Pie de página
+  const pageCount = doc.getNumberOfPages() // o doc.internal.getNumberOfPages()
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i)
+    doc.setFontSize(8)
+    doc.text(
+      `Página ${i} de ${pageCount}`,
+      doc.internal.pageSize.width - 30,
+      doc.internal.pageSize.height - 10
+    )
+  }
+
+  doc.save(`reporte_debitos_${new Date().toISOString().split('T')[0]}.pdf`)
+}
 
   /* ─── Loading state ─── */
   if (loading) {

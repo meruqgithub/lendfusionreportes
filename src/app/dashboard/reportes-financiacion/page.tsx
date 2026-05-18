@@ -11,9 +11,8 @@ import AuthGuard from '@/components/AuthGuard'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import * as XLSX from 'xlsx'
-import jsPDF from 'jspdf'
-import 'jspdf-autotable'
-import html2canvas from 'html2canvas'
+import { jsPDF } from 'jspdf'
+import * as autoTableModule from 'jspdf-autotable'
 
 interface LoanData {
   loan_id: number;                      // Agregado (viene de la consulta)
@@ -302,25 +301,26 @@ export default function ReportesFinanciacionPage() {
 
   // Exportar a PDF
   const exportToPDF = async () => {
-    if (!tableRef.current) return
-
     try {
-      // Crear documento PDF
-      const doc = new jsPDF('landscape')
+      // Crear documento PDF (jsPDF v4: constructor acepta objeto de opciones)
+      const doc = new jsPDF({ orientation: 'landscape' })
       
-      // Título
-      doc.setFontSize(16)
+      // Título principal
+      doc.setFontSize(18)
+      doc.setTextColor(41, 128, 185)
       doc.text('Reporte de Financiación', 14, 15)
       
       // Fecha de generación
-      doc.setFontSize(10)
+      doc.setFontSize(9)
+      doc.setTextColor(100, 100, 100)
       doc.text(`Generado el: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 22)
+      doc.text(`Total de registros: ${filteredData.length}`, 14, 27)
       
-      // Información de filtros
-      let yPos = 30
+      // Información de filtros aplicados
+      let yPos = 34
       const filters: string[] = []
       
-      if (loanNumberFilter) filters.push(`Número de préstamo: ${loanNumberFilter}`)
+      if (loanNumberFilter) filters.push(`Préstamo: ${loanNumberFilter}`)
       if (clientNameFilter) filters.push(`Cliente: ${clientNameFilter}`)
       if (analystFilter === 'vacios') {
         filters.push('Analista: Sin asignar')
@@ -328,122 +328,136 @@ export default function ReportesFinanciacionPage() {
         filters.push(`Analista: ${analystFilter}`)
       }
       if (dateFromFilter || dateToFilter) {
-        filters.push(`Fecha emisión: ${dateFromFilter || 'Inicio'} a ${dateToFilter || 'Fin'}`)
+        filters.push(`Fecha: ${dateFromFilter || 'Inicio'} a ${dateToFilter || 'Fin'}`)
       }
       
       if (filters.length > 0) {
-        doc.setFontSize(10)
-        doc.text(`Filtros aplicados: ${filters.join(', ')}`, 14, yPos)
-        yPos += 8
+        doc.setFontSize(9)
+        doc.setTextColor(80, 80, 80)
+        doc.text(`Filtros: ${filters.join(' | ')}`, 14, yPos)
+        yPos += 7
       }
       
-      // Totales
-      doc.setFontSize(11)
-      doc.text(`Total Financiado: $${formatCurrency(totales.montoFinanciado)}`, 14, yPos)
-      doc.text(`Total Interés: $${formatCurrency(totales.interesTotal)}`, 80, yPos)
-      doc.text(`Monto Total: $${formatCurrency(totales.montoTotal)}`, 150, yPos)
-      yPos += 10
+      // Barra de totales
+      doc.setFillColor(41, 128, 185)
+      doc.rect(14, yPos, 268, 10, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(9)
+      doc.text(`Total Financiado: $${formatCurrency(totales.montoFinanciado)}`, 16, yPos + 6.5)
+      doc.text(`Total Interés: $${formatCurrency(totales.interesTotal)}`, 110, yPos + 6.5)
+      doc.text(`Monto Total: $${formatCurrency(totales.montoTotal)}`, 200, yPos + 6.5)
+      yPos += 15
       
-      // Preparar datos para la tabla
-      const headers = [[
-        'ID', 
-        'Número Préstamo', 
-        'Cliente', 
-        'Monto Financiado', 
-        'Tasa %', 
-        'Interés Total', 
-        'Monto Total', 
-        'Cuotas', 
-        'Analista', 
+      // Preparar encabezados de la tabla
+      const tableHead = [[
+        'ID',
+        'N° Préstamo',
+        'Cliente',
+        'Monto Financiado',
+        'Tasa %',
+        'Interés Total',
+        'Monto Total',
+        'Cuotas',
+        'Analista',
         'Fecha Emisión',
-        'Capital 1ª Cuota',
-        'Interés 1ª Cuota',
-        'Total 1ª Cuota'
+        'Capital Cuota',
+        'Interés Cuota',
+        'Total Cuota'
       ]]
       
-      const data = filteredData.map(loan => [
-        loan.loan_id.toString(),
-        loan.numero_prestamo,
-        loan.nombre_cliente,
-        `$${formatCurrency(loan.capital_sin_interes)}`,
-        `${loan.porcentaje_interes}%`,
-        `$${formatCurrency(loan.total_interes)}`,
-        `$${formatCurrency(loan.total_capital_mas_interes)}`,
-        loan.numero_cuotas.toString(),
+      // Preparar filas con todos los financiamientos filtrados
+      const tableBody = filteredData.map(loan => [
+        (loan.loan_id ?? '').toString(),
+        loan.numero_prestamo ?? '',
+        loan.nombre_cliente ?? '',
+        `$${formatCurrency(loan.capital_sin_interes ?? 0)}`,
+        `${loan.porcentaje_interes ?? 0}%`,
+        `$${formatCurrency(loan.total_interes ?? 0)}`,
+        `$${formatCurrency(loan.total_capital_mas_interes ?? 0)}`,
+        (loan.numero_cuotas ?? '').toString(),
         loan.nombre_analista || 'Sin asignar',
-        formatDate(loan.fecha_emision),
-        `$${formatCurrency(loan.capital_cuota_mes)}`,
-        `$${formatCurrency(loan.interes_cuota_mes)}`,
-        `$${formatCurrency(loan.total_cuota_mes)}`
+        formatDate(loan.fecha_emision ?? ''),
+        `$${formatCurrency(loan.capital_cuota_mes ?? 0)}`,
+        `$${formatCurrency(loan.interes_cuota_mes ?? 0)}`,
+        `$${formatCurrency(loan.total_cuota_mes ?? 0)}`
       ])
       
-      // Agregar fila de totales
-      data.push([
+      // Fila de totales al final
+      tableBody.push([
         'TOTALES',
-        '',
-        '',
+        '', '',
         `$${formatCurrency(totales.montoFinanciado)}`,
         '',
         `$${formatCurrency(totales.interesTotal)}`,
         `$${formatCurrency(totales.montoTotal)}`,
-        '',
-        '',
-        '',
-        '',
-        '',
-        ''
+        '', '', '', '', '', ''
       ])
       
-      // Configurar la tabla
-      ;(doc as any).autoTable({
+      // jspdf-autotable v5: resolución segura del export en Next.js
+      const autoTable = (autoTableModule as any).default ?? (autoTableModule as any).autoTable ?? autoTableModule
+      autoTable(doc, {
         startY: yPos,
-        head: headers,
-        body: data,
+        head: tableHead,
+        body: tableBody,
         theme: 'grid',
         headStyles: {
           fillColor: [41, 128, 185],
           textColor: 255,
-          fontSize: 8
+          fontSize: 7,
+          fontStyle: 'bold',
+          halign: 'center'
         },
         bodyStyles: {
-          fontSize: 7
+          fontSize: 6.5
         },
         alternateRowStyles: {
-          fillColor: [245, 245, 245]
+          fillColor: [240, 248, 255]
+        },
+        // Estilo especial para la fila de TOTALES (la última)
+        didParseCell: (data: any) => {
+          if (data.row.index === tableBody.length - 1) {
+            data.cell.styles.fontStyle = 'bold'
+            data.cell.styles.fillColor = [41, 128, 185]
+            data.cell.styles.textColor = [255, 255, 255]
+          }
         },
         margin: { left: 14, right: 14 },
         pageBreak: 'auto',
         rowPageBreak: 'avoid',
         styles: {
           overflow: 'linebreak',
-          cellWidth: 'wrap'
+          cellPadding: 1.5
         },
         columnStyles: {
-          0: { cellWidth: 15 },  // ID
-          1: { cellWidth: 25 },  // Número Préstamo
-          2: { cellWidth: 40 },  // Cliente
-          3: { cellWidth: 25 },  // Monto Financiado
-          4: { cellWidth: 15 },  // Tasa %
-          5: { cellWidth: 25 },  // Interés Total
-          6: { cellWidth: 25 },  // Monto Total
-          7: { cellWidth: 15 },  // Cuotas
-          8: { cellWidth: 25 },  // Analista
-          9: { cellWidth: 30 },  // Fecha Emisión
-          10: { cellWidth: 25 }, // Capital 1ª Cuota
-          11: { cellWidth: 25 }, // Interés 1ª Cuota
-          12: { cellWidth: 25 }  // Total 1ª Cuota
+          0:  { cellWidth: 10, halign: 'center' }, // ID
+          1:  { cellWidth: 22 },                   // N° Préstamo
+          2:  { cellWidth: 42 },                   // Cliente
+          3:  { cellWidth: 22, halign: 'right' },  // Monto Financiado
+          4:  { cellWidth: 12, halign: 'center' }, // Tasa %
+          5:  { cellWidth: 22, halign: 'right' },  // Interés Total
+          6:  { cellWidth: 22, halign: 'right' },  // Monto Total
+          7:  { cellWidth: 12, halign: 'center' }, // Cuotas
+          8:  { cellWidth: 25 },                   // Analista
+          9:  { cellWidth: 24 },                   // Fecha Emisión
+          10: { cellWidth: 20, halign: 'right' },  // Capital Cuota
+          11: { cellWidth: 20, halign: 'right' },  // Interés Cuota
+          12: { cellWidth: 20, halign: 'right' }   // Total Cuota
         }
       })
       
-      // Pie de página
-      const pageCount = (doc as any).internal.getNumberOfPages()
+      // Pie de página en cada hoja — jsPDF v4 usa getNumberOfPages() directamente
+      const pageCount = doc.getNumberOfPages()
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i)
-        doc.setFontSize(8)
+        doc.setFontSize(7)
+        doc.setTextColor(150, 150, 150)
+        const pageWidth = doc.internal.pageSize.getWidth()
+        const pageHeight = doc.internal.pageSize.getHeight()
         doc.text(
-          `Página ${i} de ${pageCount}`,
-          doc.internal.pageSize.width - 30,
-          doc.internal.pageSize.height - 10
+          `Página ${i} de ${pageCount}  |  Reporte de Financiación LendFusion`,
+          pageWidth / 2,
+          pageHeight - 5,
+          { align: 'center' }
         )
       }
       
@@ -452,22 +466,7 @@ export default function ReportesFinanciacionPage() {
       
     } catch (error) {
       console.error('Error al generar PDF:', error)
-      // Fallback: usar html2canvas si hay problemas con autoTable
-      try {
-        if (tableRef.current) {
-          const canvas = await html2canvas(tableRef.current)
-          const imgData = canvas.toDataURL('image/png')
-          const pdf = new jsPDF('landscape')
-          const imgWidth = pdf.internal.pageSize.getWidth()
-          const imgHeight = (canvas.height * imgWidth) / canvas.width
-          
-          pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight)
-          pdf.save(`reporte_financiacion_${new Date().toISOString().split('T')[0]}.pdf`)
-        }
-      } catch (fallbackError) {
-        console.error('Error en fallback de PDF:', fallbackError)
-        alert('Error al generar el PDF. Por favor, intente exportar en otro formato.')
-      }
+      alert('Error al generar el PDF. Verifique la consola para más detalles.')
     }
   }
 
